@@ -4,9 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using MiniProject01.Components;
 using MiniProject01.Components.Account;
 using MiniProject01.Data;
-using MiniProject01.Repository;
-using MiniProject01.Repository.IRepository;
-using MiniProject01.Services;
+using MiniProject01.Repository;              // ← THÊM
+using MiniProject01.Repository.IRepository;  // ← THÊM
+using MiniProject01.Services;                // ← THÊM
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,47 +15,47 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddCascadingAuthenticationState();
-
-builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
-builder.Services.AddScoped<IProductRepository, ProductRepository>();
-builder.Services.AddScoped<IFileService, FileService>();
-
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 
 builder.Services.AddAuthentication(options =>
-    {
-        options.DefaultScheme = IdentityConstants.ApplicationScheme;
-        options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
-    })
+{
+    options.DefaultScheme = IdentityConstants.ApplicationScheme;
+    options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
+})
     .AddIdentityCookies();
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
-    {
-        options.SignIn.RequireConfirmedAccount = true;
-        options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
-    })
-    .AddRoles<IdentityRole>()
+{
+    options.SignIn.RequireConfirmedAccount = true;
+    options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
+})
+    .AddRoles<IdentityRole>()            // ← THÊM (bắt buộc cho [Authorize(Roles)])
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
+// ===== THÊM: DI cho Repository + FileService =====
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<IFileService, FileService>();
+
 var app = builder.Build();
 
-// ===== SEED ROLES + ADMIN =====
+// ===== THÊM: SEED ROLES + ADMIN ACCOUNT =====
 using (var scope = app.Services.CreateScope())
 {
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
-    // Tạo roles
     string[] roles = { "Admin", "Customer" };
     foreach (var role in roles)
     {
@@ -65,7 +65,6 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    // Tạo admin account mặc định
     var adminEmail = "admin@admin.com";
     if (await userManager.FindByEmailAsync(adminEmail) == null)
     {
@@ -82,6 +81,7 @@ using (var scope = app.Services.CreateScope())
         }
     }
 }
+// ===== END SEED =====
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -91,9 +91,9 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
+
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
 
@@ -103,7 +103,6 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// Add additional endpoints required by the Identity /Account Razor components.
 app.MapAdditionalIdentityEndpoints();
 
 app.Run();
