@@ -1,0 +1,111 @@
+﻿@page "/admin/product"
+@attribute [Authorize(Roles = "Admin")]
+@inject IProductRepository _productRepository
+@inject IFileService _fileService
+@inject IJSRuntime _jsRuntime
+
+@if (IsProcessing)
+{
+    <p class="text-center">Loading...</p>
+}
+else
+{
+    <div class="card shadow border-0 mt-4">
+        <div class="card-header bg-dark py-3">
+            <h2 class="text-white text-center py-2">Product List</h2>
+        </div>
+    </div>
+
+    <div class="card-body p-4">
+        <div class="row pb-3">
+            <div class="col-12 text-end">
+                <a href="/admin/product/create" class="btn btn-lg btn-secondary">
+                    Add New Product
+                </a>
+            </div>
+        </div>
+
+        @if (Products.Any())
+        {
+            <table class="table table-bordered table-striped">
+                <thead>
+                    <tr>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Price</th>
+                        <th>Category</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var obj in Products)
+                    {
+                        <tr>
+                            <td>
+                                <img src="@(string.IsNullOrEmpty(obj.ImageUrl) ? "/images/default.png" : obj.ImageUrl)"
+                                     alt="@obj.Name" style="max-height:50px;" />
+                            </td>
+                            <td>@obj.Name</td>
+                            <td>$@obj.Price.ToString("F2")</td>
+                            <td>@obj.Category?.Name</td>
+                            <td>
+                                <a href="@($"/admin/product/update/{obj.Id}")"
+                                   class="btn btn-primary">Edit</a>
+                                <button class="btn btn-danger ms-2"
+                                        @onclick="() => HandleDelete(obj.Id, obj.Name)">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="text-center text-muted">No products found.</p>
+        }
+    </div>
+}
+
+@code {
+    private bool IsProcessing { get; set; } = true;
+    private IEnumerable<Product> Products { get; set; } = new List<Product>();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Products = await _productRepository.GetAllAsync();
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleDelete(int id, string name)
+    {
+        var confirmed = await _jsRuntime.ToastrConfirmDelete($"Delete product '{name}'?");
+        if (!confirmed) return;
+
+        IsProcessing = true;
+
+        var product = await _productRepository.GetAsync(id);
+        var result = await _productRepository.DeleteAsync(id);
+
+        if (result)
+        {
+            if (!string.IsNullOrEmpty(product.ImageUrl))
+            {
+                _fileService.DeleteFile(product.ImageUrl);
+            }
+            await _jsRuntime.ToastrSuccess("Product deleted successfully.");
+        }
+        else
+        {
+            await _jsRuntime.ToastrError("Failed to delete product.");
+        }
+
+        Products = await _productRepository.GetAllAsync();
+        IsProcessing = false;
+    }
+}

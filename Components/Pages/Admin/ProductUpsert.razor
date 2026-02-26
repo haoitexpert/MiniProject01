@@ -1,0 +1,175 @@
+﻿@page "/admin/product/create"
+@page "/admin/product/update/{id:int}"
+@attribute [Authorize(Roles = "Admin")]
+@inject IProductRepository _productRepository
+@inject ICategoryRepository _categoryRepository
+@inject NavigationManager _navigationManager
+@inject IJSRuntime _jsRuntime
+@inject IFileService _fileService
+
+@if (IsProcessing)
+{
+    <p class="text-center">Loading...</p>
+}
+else
+{
+    <div class="card shadow border-0 mt-4">
+        <div class="card-header bg-dark py-3">
+            <h2 class="text-white text-center py-2">
+                @(Id > 0 ? "Update" : "Create") Product
+            </h2>
+        </div>
+    </div>
+
+    <div class="card-body p-4">
+        <EditForm Model="Product" FormName="ProductUpsertForm" OnValidSubmit="UpsertProduct">
+            <DataAnnotationsValidator />
+
+            <div class="border p-3 mt-4">
+                @* TÊN *@
+                <div class="form-floating py-3 col-12">
+                    <InputText @bind-Value="Product.Name" class="form-control"
+                               id="Name" placeholder="Name" />
+                    <label for="Name">Name</label>
+                    <ValidationMessage For="@(() => Product.Name)" />
+                </div>
+
+                @* MÔ TẢ *@
+                <div class="form-floating py-3 col-12">
+                    <InputTextArea @bind-Value="Product.Description" class="form-control"
+                                   id="Description" placeholder="Description"
+                                   style="height:100px" />
+                    <label for="Description">Description</label>
+                </div>
+
+                @* GIÁ *@
+                <div class="form-floating py-3 col-12">
+                    <InputNumber @bind-Value="Product.Price" class="form-control"
+                                 id="Price" placeholder="Price" />
+                    <label for="Price">Price</label>
+                    <ValidationMessage For="@(() => Product.Price)" />
+                </div>
+
+                @* SELECT CATEGORY *@
+                <div class="form-floating py-3 col-12">
+                    <InputSelect @bind-Value="Product.CategoryId" class="form-select"
+                                 id="CategoryId">
+                        <option value="0" disabled>-- Select Category --</option>
+                        @foreach (var cat in Categories)
+                        {
+                            <option value="@cat.Id">@cat.Name</option>
+                        }
+                    </InputSelect>
+                    <label for="CategoryId">Category</label>
+                    <ValidationMessage For="@(() => Product.CategoryId)" />
+                </div>
+
+                @* UPLOAD ẢNH *@
+                <div class="py-3 col-12">
+                    <label class="form-label">Image</label>
+                    <InputFile OnChange="HandleFileSelection" class="form-control"
+                               accept="image/*" />
+                </div>
+
+                @* PREVIEW ẢNH *@
+                <div class="py-3">
+                    @if (!string.IsNullOrEmpty(ImagePreviewUrl))
+                    {
+                        <img src="@ImagePreviewUrl" alt="preview" style="max-height:200px;" />
+                    }
+                    else if (!string.IsNullOrEmpty(Product.ImageUrl))
+                    {
+                        <img src="@Product.ImageUrl" alt="current" style="max-height:200px;" />
+                    }
+                    else
+                    {
+                        <img src="/images/default.png" alt="default" style="max-height:200px;" />
+                    }
+                </div>
+
+                @* BUTTONS *@
+                <div class="row mt-3">
+                    <div class="col-6 col-md-3">
+                        <button type="submit" class="btn btn-primary form-control"
+                                disabled="@IsProcessing">
+                            @(Id > 0 ? "Update" : "Create")
+                        </button>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <a href="/admin/product" class="btn btn-secondary form-control">
+                            Back to List
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    [SupplyParameterFromForm]
+    private Product Product { get; set; } = new Product();
+
+    private bool IsProcessing { get; set; } = true;
+    private IEnumerable<Category> Categories { get; set; } = new List<Category>();
+    private IBrowserFile? SelectedFile { get; set; }
+    private string? ImagePreviewUrl { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Load danh sách category cho dropdown
+            Categories = await _categoryRepository.GetAllAsync();
+
+            if (Id > 0)
+            {
+                Product = await _productRepository.GetAsync(Id);
+            }
+
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleFileSelection(InputFileChangeEventArgs e)
+    {
+        SelectedFile = e.File;
+        var format = e.File.ContentType;
+        var buffer = new byte[e.File.Size];
+        await e.File.OpenReadStream(5 * 1024 * 1024).ReadAsync(buffer);
+        ImagePreviewUrl = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+    }
+
+    private async Task UpsertProduct()
+    {
+        IsProcessing = true;
+
+        // Upload file nếu có chọn ảnh mới
+        if (SelectedFile != null)
+        {
+            if (!string.IsNullOrEmpty(Product.ImageUrl))
+            {
+                _fileService.DeleteFile(Product.ImageUrl);
+            }
+            Product.ImageUrl = await _fileService.SaveFileAsync(SelectedFile, "images/product");
+        }
+
+        if (Product.Id == 0)
+        {
+            await _productRepository.CreateAsync(Product);
+            await _jsRuntime.ToastrSuccess("Product created successfully");
+        }
+        else
+        {
+            await _productRepository.UpdateAsync(Product);
+            await _jsRuntime.ToastrSuccess("Product updated successfully");
+        }
+
+        IsProcessing = false;
+        _navigationManager.NavigateTo("/admin/product");
+    }
+}
