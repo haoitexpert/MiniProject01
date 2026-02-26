@@ -1,7 +1,108 @@
 ﻿@page "/"
+@inject IProductRepository _productRepository
+@inject ICategoryRepository _categoryRepository
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<h2 class="text-center my-4">Our Products</h2>
 
-Welcome to your new app.
+@* ===== SEARCH + FILTER ===== *@
+<div class="row mb-4">
+    <div class="col-md-6">
+        <input type="text" class="form-control" placeholder="Search products..."
+               @bind="SearchText" @bind:event="oninput" @bind:after="FilterProducts" />
+    </div>
+    <div class="col-md-4">
+        <select class="form-select" @bind="SelectedCategoryId" @bind:after="FilterProducts">
+            <option value="0">All Categories</option>
+            @foreach (var cat in Categories)
+            {
+                <option value="@cat.Id">@cat.Name</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <button class="btn btn-secondary form-control" @onclick="ClearFilter">Clear</button>
+    </div>
+</div>
+
+@* ===== PRODUCT GRID ===== *@
+@if (IsProcessing)
+{
+    <p class="text-center">Loading...</p>
+}
+else if (FilteredProducts.Any())
+{
+    <div class="row">
+        @foreach (var product in FilteredProducts)
+        {
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    <img src="@(string.IsNullOrEmpty(product.ImageUrl) ? "/images/default.png" : product.ImageUrl)"
+                         class="card-img-top" alt="@product.Name"
+                         style="height:200px; object-fit:cover;" />
+                    <div class="card-body">
+                        <h5 class="card-title">@product.Name</h5>
+                        <p class="card-text text-muted">@product.Category?.Name</p>
+                        <p class="card-text">@product.Description</p>
+                        <h5 class="text-danger">$@product.Price.ToString("F2")</h5>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <p class="text-center text-muted">No products found.</p>
+}
+
+@code {
+    private bool IsProcessing { get; set; } = true;
+    private IEnumerable<Product> AllProducts { get; set; } = new List<Product>();
+    private IEnumerable<Product> FilteredProducts { get; set; } = new List<Product>();
+    private IEnumerable<Category> Categories { get; set; } = new List<Category>();
+
+    private string SearchText { get; set; } = "";
+    private int SelectedCategoryId { get; set; } = 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            AllProducts = await _productRepository.GetAllAsync();
+            Categories = await _categoryRepository.GetAllAsync();
+            FilteredProducts = AllProducts;
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FilterProducts()
+    {
+        FilteredProducts = AllProducts;
+
+        // Lọc theo category
+        if (SelectedCategoryId > 0)
+        {
+            FilteredProducts = FilteredProducts
+                .Where(p => p.CategoryId == SelectedCategoryId);
+        }
+
+        // Lọc theo search text
+        if (!string.IsNullOrWhiteSpace(SearchText))
+        {
+            FilteredProducts = FilteredProducts
+                .Where(p => p.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
+                    || (p.Description != null &&
+                        p.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase)));
+        }
+    }
+
+    private void ClearFilter()
+    {
+        SearchText = "";
+        SelectedCategoryId = 0;
+        FilteredProducts = AllProducts;
+    }
+}
