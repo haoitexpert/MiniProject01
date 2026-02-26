@@ -1,0 +1,141 @@
+﻿@page "/admin/category/create"
+@page "/admin/category/update/{id:int}"
+@attribute [Authorize(Roles = "Admin")]
+@inject ICategoryRepository _categoryRepository
+@inject NavigationManager _navigationManager
+@inject IJSRuntime _jsRuntime
+@inject IFileService _fileService
+
+@if (IsProcessing)
+{
+    <p class="text-center">Loading...</p>
+}
+else
+{
+    <div class="card shadow border-0 mt-4">
+        <div class="card-header bg-dark py-3">
+            <h2 class="text-white text-center py-2">
+                @(Id > 0 ? "Update" : "Create") Category
+            </h2>
+        </div>
+    </div>
+
+    <div class="card-body p-4">
+        <EditForm Model="Category" FormName="CategoryUpsertForm" OnValidSubmit="UpsertCategory">
+            <DataAnnotationsValidator />
+
+            <div class="border p-3 mt-4">
+                @* TÊN *@
+                <div class="form-floating py-3 col-12">
+                    <InputText @bind-Value="Category.Name" class="form-control"
+                               id="Name" placeholder="Name" />
+                    <label for="Name">Name</label>
+                    <ValidationMessage For="@(() => Category.Name)" />
+                </div>
+
+                @* UPLOAD ẢNH *@
+                <div class="py-3 col-12">
+                    <label class="form-label">Image</label>
+                    <InputFile OnChange="HandleFileSelection" class="form-control" accept="image/*" />
+                </div>
+
+                @* PREVIEW ẢNH *@
+                <div class="py-3">
+                    @if (!string.IsNullOrEmpty(ImagePreviewUrl))
+                    {
+                        <img src="@ImagePreviewUrl" alt="preview" style="max-height:200px;" />
+                    }
+                    else if (!string.IsNullOrEmpty(Category.ImageUrl))
+                    {
+                        <img src="@Category.ImageUrl" alt="current" style="max-height:200px;" />
+                    }
+                    else
+                    {
+                        <img src="/images/default.png" alt="default" style="max-height:200px;" />
+                    }
+                </div>
+
+                @* BUTTONS *@
+                <div class="row mt-3">
+                    <div class="col-6 col-md-3">
+                        <button type="submit" class="btn btn-primary form-control"
+                                disabled="@IsProcessing">
+                            @(Id > 0 ? "Update" : "Create")
+                        </button>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <a href="/admin/category" class="btn btn-secondary form-control">
+                            Back to List
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    [SupplyParameterFromForm]
+    private Category Category { get; set; } = new Category();
+
+    private bool IsProcessing { get; set; } = true;
+    private IBrowserFile? SelectedFile { get; set; }
+    private string? ImagePreviewUrl { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (Id > 0)
+            {
+                Category = await _categoryRepository.GetAsync(Id);
+            }
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleFileSelection(InputFileChangeEventArgs e)
+    {
+        SelectedFile = e.File;
+
+        // Tạo preview bằng base64
+        var format = e.File.ContentType;
+        var buffer = new byte[e.File.Size];
+        await e.File.OpenReadStream(5 * 1024 * 1024).ReadAsync(buffer);
+        ImagePreviewUrl = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+    }
+
+    private async Task UpsertCategory()
+    {
+        IsProcessing = true;
+
+        // Upload file nếu có chọn ảnh mới
+        if (SelectedFile != null)
+        {
+            // Xóa ảnh cũ nếu đang update
+            if (!string.IsNullOrEmpty(Category.ImageUrl))
+            {
+                _fileService.DeleteFile(Category.ImageUrl);
+            }
+            Category.ImageUrl = await _fileService.SaveFileAsync(SelectedFile, "images/category");
+        }
+
+        if (Category.Id == 0)
+        {
+            await _categoryRepository.CreateAsync(Category);
+            await _jsRuntime.ToastrSuccess("Category created successfully");
+        }
+        else
+        {
+            await _categoryRepository.UpdateAsync(Category);
+            await _jsRuntime.ToastrSuccess("Category updated successfully");
+        }
+
+        IsProcessing = false;
+        _navigationManager.NavigateTo("/admin/category");
+    }
+}

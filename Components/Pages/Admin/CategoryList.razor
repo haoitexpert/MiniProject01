@@ -1,0 +1,114 @@
+﻿@page "/admin/category"
+@attribute [Authorize(Roles = "Admin")]
+@inject ICategoryRepository _categoryRepository
+@inject IFileService _fileService
+@inject IJSRuntime _jsRuntime
+
+@if (IsProcessing)
+{
+    <p class="text-center">Loading...</p>
+}
+else
+{
+    <div class="card shadow border-0 mt-4">
+        <div class="card-header bg-dark py-3">
+            <h2 class="text-white text-center py-2">Category List</h2>
+        </div>
+    </div>
+
+    <div class="card-body p-4">
+        <div class="row pb-3">
+            <div class="col-12 text-end">
+                <a href="/admin/category/create" class="btn btn-lg btn-secondary">
+                    Add New Category
+                </a>
+            </div>
+        </div>
+
+        @if (Categories.Any())
+        {
+            <table class="table table-bordered table-striped">
+                <thead>
+                    <tr>
+                        <th>Image</th>
+                        <th>Name</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var obj in Categories)
+                    {
+                        <tr>
+                            <td>
+                                <img src="@(string.IsNullOrEmpty(obj.ImageUrl) ? "/images/default.png" : obj.ImageUrl)"
+                                     alt="@obj.Name" style="max-height:50px;" />
+                            </td>
+                            <td>@obj.Name</td>
+                            <td>
+                                <a href="@($"/admin/category/update/{obj.Id}")"
+                                   class="btn btn-primary">Edit</a>
+                                <button class="btn btn-danger ms-2"
+                                        @onclick="() => HandleDelete(obj.Id, obj.Name)">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="text-center text-muted">No categories found.</p>
+        }
+    </div>
+}
+
+@code {
+    private bool IsProcessing { get; set; } = true;
+    private IEnumerable<Category> Categories { get; set; } = new List<Category>();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadCategories();
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCategories()
+    {
+        Categories = await _categoryRepository.GetAllAsync();
+    }
+
+    private async Task HandleDelete(int id, string name)
+    {
+        // Dùng confirm của browser thay vì modal
+        var confirmed = await _jsRuntime.ToastrConfirmDelete($"Delete category '{name}'?");
+        if (!confirmed) return;
+
+        IsProcessing = true;
+
+        var category = await _categoryRepository.GetAsync(id);
+        var result = await _categoryRepository.DeleteAsync(id);
+
+        if (result)
+        {
+            // Xóa file ảnh nếu có
+            if (!string.IsNullOrEmpty(category.ImageUrl))
+            {
+                _fileService.DeleteFile(category.ImageUrl);
+            }
+            await _jsRuntime.ToastrSuccess("Category deleted successfully.");
+        }
+        else
+        {
+            await _jsRuntime.ToastrError("Failed to delete category.");
+        }
+
+        await LoadCategories();
+        IsProcessing = false;
+    }
+}
